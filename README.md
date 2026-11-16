@@ -1,6 +1,9 @@
-# Project Development has moved to a [NEW PLACE](https://github.com/MControlSuite/MControlCenter)
+# MControlCenter
 
-this repo is dead, all development now happens under the [MControlSuite Umbrella](https://github.com/MControlSuite)
+MControlCenter is a Free and Open Source GNU/Linux application that allows you to change the settings of MSI laptops.
+
+<img width="1500" height="1332" alt="MCC3" src="https://github.com/user-attachments/assets/75b5ee18-ed99-4a89-b9fe-1ec0078760e8" />
+
 
 
 
