@@ -170,13 +170,6 @@ std::optional<int> Operate::getGpuTemp() const {
 }
 
 int Operate::getFan1Speed() const {
-    // Re-detect on every read instead of trusting what doProbe() saw once. The
-    // detection works by looking at which address currently holds a tachometer
-    // value, so it cannot tell them apart while the fan is stopped. Latching that
-    // answer at startup left the wrong address in place for the whole session,
-    // reporting 8000-10000 rpm for a fan that was not even spinning.
-    fan1Address = detectFan1Address();
-
     // Read 2 bytes (big-endian)
     int value0 = helper.getValue(fan1Address);
     int value1 = helper.getValue(fan1Address - 1);
