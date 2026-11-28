@@ -22,6 +22,7 @@
 #include "settings.h"
 #include <QTimer>
 #include <QMessageBox>
+#include <QSignalBlocker>
 
 Operate operate;
 PowerMonitor powerMonitor;
@@ -489,7 +490,19 @@ void MainWindow::updateFanMode() {
 }
 
 void MainWindow::updateFanSpeedSettings() {
-    ui->advancedFanControlCheckBox->setChecked(operate.getFanMode() == fan_mode::advanced_fan_mode);
+    // Refreshing the UI must never write to the EC. setChecked() emits toggled(),
+    // which reaches setFanModeAdvanced() and both writes the fan mode byte and
+    // overwrites the user's saved "fanModeAdvanced" preference. When the EC has
+    // been reset behind our back (e.g. the EC clears the advanced bit on resume),
+    // that silently turned the user's choice off for good.
+    const bool advancedActive = operate.getFanMode() == fan_mode::advanced_fan_mode;
+    {
+        const QSignalBlocker blocker(ui->advancedFanControlCheckBox);
+        ui->advancedFanControlCheckBox->setChecked(advancedActive);
+    }
+    ui->fanControlTabWidget->setEnabled(advancedActive);
+    ui->fanSpeedResetButton->setEnabled(advancedActive);
+    ui->fanSpeedApplyButton->setEnabled(advancedActive);
 
     QVector fan1SpeedSettings = operate.getFan1SpeedSettings();
     QVector fan1TempSettings = operate.getFan1TempSettings();

@@ -418,8 +418,25 @@ void Operate::setUserMode(user_mode userMode) const {
     }
     
     if (msiEcHelper.hasFanMode()) {
-        msiEcHelper.setFanMode(fanMode);
+        // Do not clobber the advanced fan mode the user asked for. The plain
+        // Operate::setFanMode() guards against this, but the msi-ec path used to
+        // bypass that guard, so every profile click (including the programmatic
+        // one updateUserMode() issues on startup) dropped the machine to auto.
+        // The guard reads the saved preference rather than the current EC value,
+        // so it still holds after the EC has reset itself.
+        Settings s;
+        const bool keepAdvanced =
+                userMode != user_mode::silent_mode &&
+                s.isValueExist(settingsGroup + "fanModeAdvanced") &&
+                s.getValue(settingsGroup + "fanModeAdvanced").toBool();
+        if (!keepAdvanced)
+            msiEcHelper.setFanMode(fanMode);
     }
+
+    // Picking the silent profile is an explicit request for the silent fan mode,
+    // so it also cancels the advanced preference instead of fighting it later.
+    if (userMode == user_mode::silent_mode)
+        Settings::setValue(settingsGroup + "fanModeAdvanced", false);
 
     if (msiEcHelper.hasSuperBattery()) {
         msiEcHelper.setSuperBattery(superBattery);
@@ -553,6 +570,22 @@ void Operate::loadSettings() const {
 
 void Operate::handleWakeEvent() const {
     Settings s;
+
+    // Resuming from sleep does not only clear the advanced bit of the fan mode
+    // byte: on at least the Delta 15 A5EFK the EC also drops the user's fan
+    // curve back to the factory one. Restoring the mode alone leaves the fan
+    // running the stock advanced curve, which is measurably weaker (4400 rpm
+    // instead of 6000 rpm at 75 degrees on that machine), with the UI happily
+    // reporting "Advanced". Rewrite the curve first, then the mode.
+    if (s.isValueExist(settingsGroup + "fan1SpeedSettings"))
+        setFan1SpeedSettings(s.getValueVector(settingsGroup + "fan1SpeedSettings"));
+    if (s.isValueExist(settingsGroup + "fan2SpeedSettings"))
+        setFan2SpeedSettings(s.getValueVector(settingsGroup + "fan2SpeedSettings"));
+    if (s.isValueExist(settingsGroup + "fan1TempSettings"))
+        setFan1TempSettings(s.getValueVector(settingsGroup + "fan1TempSettings"));
+    if (s.isValueExist(settingsGroup + "fan2TempSettings"))
+        setFan2TempSettings(s.getValueVector(settingsGroup + "fan2TempSettings"));
+
     if (s.isValueExist(settingsGroup + "fanModeAdvanced"))
         setFanModeAdvanced(s.getValue(settingsGroup + "fanModeAdvanced").toBool());
 }
