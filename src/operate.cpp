@@ -418,7 +418,32 @@ void Operate::setUserMode(user_mode userMode) const {
     }
     
     if (msiEcHelper.hasFanMode()) {
-        msiEcHelper.setFanMode(fanMode);
+        // Do not clobber the advanced fan mode the user asked for. The plain
+        // Operate::setFanMode() guards against this, but the msi-ec path used to
+        // bypass that guard, so every profile click (including the programmatic
+        // one updateUserMode() issues on startup) dropped the machine to auto.
+        // The guard reads the saved preference rather than the current EC value,
+        // so it still holds after the EC has reset itself.
+        Settings s;
+        const bool wantsAdvanced =
+                s.isValueExist(settingsGroup + "fanModeAdvanced") &&
+                s.getValue(settingsGroup + "fanModeAdvanced").toBool();
+
+        if (userMode == user_mode::silent_mode || userMode == user_mode::super_battery_mode) {
+            // The profiles that exist to keep the machine quiet or save power win
+            // while they are selected: letting a custom curve that can ask for
+            // full speed sit on top of them would defeat what they promise. The
+            // preference is left alone, so leaving the profile brings the
+            // advanced mode back.
+            msiEcHelper.setFanMode(fanMode);
+        } else if (wantsAdvanced) {
+            // Writing the advanced value, rather than skipping the write, also
+            // covers coming back from the silent profile: the EC is on silent at
+            // that point, so doing nothing would strand it there.
+            setFanModeAdvanced(true);
+        } else {
+            msiEcHelper.setFanMode(fanMode);
+        }
     }
 
     if (msiEcHelper.hasSuperBattery()) {
@@ -553,6 +578,22 @@ void Operate::loadSettings() const {
 
 void Operate::handleWakeEvent() const {
     Settings s;
+
+    // Resuming from sleep does not only clear the advanced bit of the fan mode
+    // byte: on at least the Delta 15 A5EFK the EC also drops the user's fan
+    // curve back to the factory one. Restoring the mode alone leaves the fan
+    // running the stock advanced curve, which is measurably weaker (4400 rpm
+    // instead of 6000 rpm at 75 degrees on that machine), with the UI happily
+    // reporting "Advanced". Rewrite the curve first, then the mode.
+    if (s.isValueExist(settingsGroup + "fan1SpeedSettings"))
+        setFan1SpeedSettings(s.getValueVector(settingsGroup + "fan1SpeedSettings"));
+    if (s.isValueExist(settingsGroup + "fan2SpeedSettings"))
+        setFan2SpeedSettings(s.getValueVector(settingsGroup + "fan2SpeedSettings"));
+    if (s.isValueExist(settingsGroup + "fan1TempSettings"))
+        setFan1TempSettings(s.getValueVector(settingsGroup + "fan1TempSettings"));
+    if (s.isValueExist(settingsGroup + "fan2TempSettings"))
+        setFan2TempSettings(s.getValueVector(settingsGroup + "fan2TempSettings"));
+
     if (s.isValueExist(settingsGroup + "fanModeAdvanced"))
         setFanModeAdvanced(s.getValue(settingsGroup + "fanModeAdvanced").toBool());
 }

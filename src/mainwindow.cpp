@@ -22,6 +22,7 @@
 #include "settings.h"
 #include <QTimer>
 #include <QMessageBox>
+#include <QSignalBlocker>
 
 Operate operate;
 PowerMonitor powerMonitor;
@@ -169,6 +170,13 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(realtimeUpdateTimer, &QTimer::timeout, this, &MainWindow::realtimeUpdate);
     setUpdateInterval(1000);
+
+    // Preferred way to learn about a resume: logind announces it. The timer below
+    // can only infer sleep from a gap of more than fifteen seconds, so a short nap
+    // went unnoticed while the EC had already reset the fan mode. The timer stays
+    // as a fallback for systems without logind.
+    connect(&powerMonitor, &PowerMonitor::resumedFromSleep, this, &MainWindow::handleWakeEvent);
+    powerMonitor.connectToLogind();
 
     // Timer to detect sleep and reapply Advanced Mode Fan if necessary
     connect(&timerSleepWatcher, &QTimer::timeout, this, &MainWindow::timerSleepTimeout);
@@ -467,6 +475,20 @@ void MainWindow::updateUserMode() {
 }
 
 void MainWindow::updateFanMode() {
+    // Keep the checkbox honest. It used to be set only in updateFanSpeedSettings(),
+    // which runs on load, so anything that changed the fan mode afterwards (the EC
+    // resetting itself on resume, another tool, a terminal write) left the box
+    // claiming the advanced mode was on while the machine was back on auto.
+    // Signals stay blocked: this reflects the EC, it must not write to it.
+    const bool advancedActive = operate.getFanMode() == fan_mode::advanced_fan_mode;
+    if (ui->advancedFanControlCheckBox->isChecked() != advancedActive) {
+        const QSignalBlocker blocker(ui->advancedFanControlCheckBox);
+        ui->advancedFanControlCheckBox->setChecked(advancedActive);
+        ui->fanControlTabWidget->setEnabled(advancedActive);
+        ui->fanSpeedResetButton->setEnabled(advancedActive);
+        ui->fanSpeedApplyButton->setEnabled(advancedActive);
+    }
+
     QString fanMode;
     switch (operate.getFanMode()) {
         case fan_mode::auto_fan_mode:
@@ -489,7 +511,19 @@ void MainWindow::updateFanMode() {
 }
 
 void MainWindow::updateFanSpeedSettings() {
-    ui->advancedFanControlCheckBox->setChecked(operate.getFanMode() == fan_mode::advanced_fan_mode);
+    // Refreshing the UI must never write to the EC. setChecked() emits toggled(),
+    // which reaches setFanModeAdvanced() and both writes the fan mode byte and
+    // overwrites the user's saved "fanModeAdvanced" preference. When the EC has
+    // been reset behind our back (e.g. the EC clears the advanced bit on resume),
+    // that silently turned the user's choice off for good.
+    const bool advancedActive = operate.getFanMode() == fan_mode::advanced_fan_mode;
+    {
+        const QSignalBlocker blocker(ui->advancedFanControlCheckBox);
+        ui->advancedFanControlCheckBox->setChecked(advancedActive);
+    }
+    ui->fanControlTabWidget->setEnabled(advancedActive);
+    ui->fanSpeedResetButton->setEnabled(advancedActive);
+    ui->fanSpeedApplyButton->setEnabled(advancedActive);
 
     QVector fan1SpeedSettings = operate.getFan1SpeedSettings();
     QVector fan1TempSettings = operate.getFan1TempSettings();
@@ -673,6 +707,15 @@ void MainWindow::quitApp() const {
     (void) QCoreApplication::quit();
 }
 
+void MainWindow::handleWakeEvent() {
+    // Give the EC a moment to finish its own reset before writing to it, and mark
+    // the watcher as seen so the timer below does not fire a second time.
+    timeLastWatcherInterval = QDateTime::currentMSecsSinceEpoch();
+    QTimer::singleShot(3000, this, []() {
+        operate.handleWakeEvent();
+    });
+}
+
 void MainWindow::timerSleepTimeout() {
     qint64 timeNow = QDateTime::currentMSecsSinceEpoch();
     if (timeLastWatcherInterval == 0) {
@@ -683,7 +726,7 @@ void MainWindow::timerSleepTimeout() {
     timeLastWatcherInterval = timeNow;
     if (msecsSinceTimeout > timerSleepWatcher.interval() + 5000) {
         // Went to sleep for at least 5 seconds
-        operate.handleWakeEvent();
+        handleWakeEvent();
     }
 }
 

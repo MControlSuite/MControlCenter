@@ -93,6 +93,8 @@ private:
 
     QTimer timerSleepWatcher;
     qint64 timeLastWatcherInterval = 0;
+    void handleWakeEvent();
+
     void timerSleepTimeout();
 
     void createTrayIcon();
