@@ -468,6 +468,20 @@ void MainWindow::updateUserMode() {
 }
 
 void MainWindow::updateFanMode() {
+    // Keep the checkbox honest. It used to be set only in updateFanSpeedSettings(),
+    // which runs on load, so anything that changed the fan mode afterwards (the EC
+    // resetting itself on resume, another tool, a terminal write) left the box
+    // claiming the advanced mode was on while the machine was back on auto.
+    // Signals stay blocked: this reflects the EC, it must not write to it.
+    const bool advancedActive = operate.getFanMode() == fan_mode::advanced_fan_mode;
+    if (ui->advancedFanControlCheckBox->isChecked() != advancedActive) {
+        const QSignalBlocker blocker(ui->advancedFanControlCheckBox);
+        ui->advancedFanControlCheckBox->setChecked(advancedActive);
+        ui->fanControlTabWidget->setEnabled(advancedActive);
+        ui->fanSpeedResetButton->setEnabled(advancedActive);
+        ui->fanSpeedApplyButton->setEnabled(advancedActive);
+    }
+
     QString fanMode;
     switch (operate.getFanMode()) {
         case fan_mode::auto_fan_mode:
