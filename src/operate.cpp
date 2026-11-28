@@ -429,10 +429,12 @@ void Operate::setUserMode(user_mode userMode) const {
                 s.isValueExist(settingsGroup + "fanModeAdvanced") &&
                 s.getValue(settingsGroup + "fanModeAdvanced").toBool();
 
-        if (userMode == user_mode::silent_mode) {
-            // The silent profile carries its own fan mode and wins while it is
-            // selected. The preference is left alone, so leaving the profile
-            // brings the advanced mode back.
+        if (userMode == user_mode::silent_mode || userMode == user_mode::super_battery_mode) {
+            // The profiles that exist to keep the machine quiet or save power win
+            // while they are selected: letting a custom curve that can ask for
+            // full speed sit on top of them would defeat what they promise. The
+            // preference is left alone, so leaving the profile brings the
+            // advanced mode back.
             msiEcHelper.setFanMode(fanMode);
         } else if (wantsAdvanced) {
             // Writing the advanced value, rather than skipping the write, also
