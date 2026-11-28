@@ -425,18 +425,24 @@ void Operate::setUserMode(user_mode userMode) const {
         // The guard reads the saved preference rather than the current EC value,
         // so it still holds after the EC has reset itself.
         Settings s;
-        const bool keepAdvanced =
-                userMode != user_mode::silent_mode &&
+        const bool wantsAdvanced =
                 s.isValueExist(settingsGroup + "fanModeAdvanced") &&
                 s.getValue(settingsGroup + "fanModeAdvanced").toBool();
-        if (!keepAdvanced)
-            msiEcHelper.setFanMode(fanMode);
-    }
 
-    // Picking the silent profile is an explicit request for the silent fan mode,
-    // so it also cancels the advanced preference instead of fighting it later.
-    if (userMode == user_mode::silent_mode)
-        Settings::setValue(settingsGroup + "fanModeAdvanced", false);
+        if (userMode == user_mode::silent_mode) {
+            // The silent profile carries its own fan mode and wins while it is
+            // selected. The preference is left alone, so leaving the profile
+            // brings the advanced mode back.
+            msiEcHelper.setFanMode(fanMode);
+        } else if (wantsAdvanced) {
+            // Writing the advanced value, rather than skipping the write, also
+            // covers coming back from the silent profile: the EC is on silent at
+            // that point, so doing nothing would strand it there.
+            setFanModeAdvanced(true);
+        } else {
+            msiEcHelper.setFanMode(fanMode);
+        }
+    }
 
     if (msiEcHelper.hasSuperBattery()) {
         msiEcHelper.setSuperBattery(superBattery);
