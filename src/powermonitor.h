@@ -36,8 +36,10 @@ public:
 
     bool connectToUpower();
     bool connectToPowerProfiles();
+    bool connectToLogind();
     void disconnectFromUpower();
     void disconnectFromPowerProfiles();
+    void disconnectFromLogind();
     void queryChargerState();
     void queryPowerProfile();
 
@@ -49,10 +51,12 @@ private:
 
     bool isUPowerConnected = false;
     bool isPowerProfileConnected = false;
+    bool isLogindConnected = false;
 
 signals:
     void currentChargerState(bool isOnline);
     void currentPowerProfile(const PowerProfile profile);
+    void resumedFromSleep();
 
 private slots:
     void onChargerStateChanged(const QString &interface,
@@ -62,6 +66,8 @@ private slots:
     void onPowerProfileChanged(const QString &interface,
                                const QVariantMap &changed,
                                const QStringList &invalidatedProps);
+
+    void onPrepareForSleep(bool goingToSleep);
 };
 
 #endif // POWERMONITOR_H

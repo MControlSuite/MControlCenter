@@ -171,6 +171,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(realtimeUpdateTimer, &QTimer::timeout, this, &MainWindow::realtimeUpdate);
     setUpdateInterval(1000);
 
+    // Preferred way to learn about a resume: logind announces it. The timer below
+    // can only infer sleep from a gap of more than fifteen seconds, so a short nap
+    // went unnoticed while the EC had already reset the fan mode. The timer stays
+    // as a fallback for systems without logind.
+    connect(&powerMonitor, &PowerMonitor::resumedFromSleep, this, &MainWindow::handleWakeEvent);
+    powerMonitor.connectToLogind();
+
     // Timer to detect sleep and reapply Advanced Mode Fan if necessary
     connect(&timerSleepWatcher, &QTimer::timeout, this, &MainWindow::timerSleepTimeout);
     timerSleepWatcher.setInterval(10 * 1000);
@@ -700,6 +707,15 @@ void MainWindow::quitApp() const {
     (void) QCoreApplication::quit();
 }
 
+void MainWindow::handleWakeEvent() {
+    // Give the EC a moment to finish its own reset before writing to it, and mark
+    // the watcher as seen so the timer below does not fire a second time.
+    timeLastWatcherInterval = QDateTime::currentMSecsSinceEpoch();
+    QTimer::singleShot(3000, this, []() {
+        operate.handleWakeEvent();
+    });
+}
+
 void MainWindow::timerSleepTimeout() {
     qint64 timeNow = QDateTime::currentMSecsSinceEpoch();
     if (timeLastWatcherInterval == 0) {
@@ -710,7 +726,7 @@ void MainWindow::timerSleepTimeout() {
     timeLastWatcherInterval = timeNow;
     if (msecsSinceTimeout > timerSleepWatcher.interval() + 5000) {
         // Went to sleep for at least 5 seconds
-        operate.handleWakeEvent();
+        handleWakeEvent();
     }
 }
 

@@ -115,6 +115,50 @@ bool PowerMonitor::parseChargerState(uint state) const {
     }
 }
 
+bool PowerMonitor::connectToLogind() {
+    if (isLogindConnected) {
+        return true;
+    }
+
+    auto bus = QDBusConnection::systemBus();
+
+    if (!bus.interface()->isServiceRegistered("org.freedesktop.login1")) {
+        return false;
+    }
+
+    bool ok = bus.connect(
+        "org.freedesktop.login1",
+        "/org/freedesktop/login1",
+        "org.freedesktop.login1.Manager",
+        "PrepareForSleep",
+        this,
+        SLOT(onPrepareForSleep(bool))
+        );
+
+    isLogindConnected = ok;
+    return ok;
+}
+
+void PowerMonitor::disconnectFromLogind() {
+    if (isLogindConnected) {
+        QDBusConnection::systemBus().disconnect(
+            "org.freedesktop.login1",
+            "/org/freedesktop/login1",
+            "org.freedesktop.login1.Manager",
+            "PrepareForSleep",
+            this,
+            SLOT(onPrepareForSleep(bool))
+            );
+        isLogindConnected = false;
+    }
+}
+
+void PowerMonitor::onPrepareForSleep(bool goingToSleep) {
+    // logind sends true just before suspending and false right after resuming.
+    if (!goingToSleep)
+        emit resumedFromSleep();
+}
+
 bool PowerMonitor::connectToPowerProfiles() {
     if (isPowerProfileConnected) {
         return true;
